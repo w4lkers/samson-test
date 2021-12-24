@@ -1,0 +1,56 @@
+---
+
+- hosts: all
+  become: yes
+  become_method: sudo
+  tasks:
+    - name: UPDATE CACHE
+      apt:
+        update_cache: yes
+        cache_valid_time: 432000
+
+    - name: INSTALL PHP7.2-FPM
+      apt:
+        name: ["php7.2", "php7.2-fpm"]
+        state: latest
+
+    - name: CREATE PHP SYMLINK
+      ansible.biltin.file:
+        src: /usr/bin/php7.2
+        dest: /etc/alternatives/php
+        state: link
+
+    - name: PHP-FPM CONFIG
+      ansible.builtin.copy:
+        src: www.conf
+        dest: /etc/php/7.2/fpm/pool.d/www.conf
+        mode: '0644'
+        backup: yes
+
+    - name: DISABLE APACHE MOD PHP5.6
+      apache2_module: 
+        name=php5.6 
+        state=absent
+
+    - name: ENABLE APACHE MOD PHP7.2
+      apache2_module: 
+        name=php7.2
+        state=present
+      notify:
+        - restart apache2
+
+  handlers:
+    - name: restart apache2
+      ansible.builtin.service:
+        name: apache2
+        state: restarted
+
+    - name: restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+
+    - name: restart php-fpm
+      ansible.builtin.service:
+        name: php7.2-fpm
+        state: restarted

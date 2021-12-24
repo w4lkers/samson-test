@@ -1,0 +1,132 @@
+---
+
+- hosts: all
+  become: yes
+  become_method: sudo
+  tasks:
+    - name: UPDATE CACHE
+      apt:
+        update_cache: yes
+        cache_valid_time: 432000
+
+    - name: UPGRADE PKGS
+      apt:
+        name: "*"
+        state: latest
+
+    - name: ADD PKGS FOR PHP56
+      apt:
+        name: ["apt-transport-https", "lsb-release", "ca-certificates"]
+
+    - name: ADD PHP5.6 KEY
+      apt_key:
+        url: https://packages.sury.org/php/apt.gpg
+        state: present
+
+    - name: ADD PHP REPO
+      ansible.builtin.apt_repository:
+        repo: deb https://packages.sury.org/php/ stretch main
+        state: present
+
+    - name: INSTALL UTILS PKGS
+      apt:
+        name: ["vim", "wget", "htop", "tmux", "lynx"]
+        state: latest
+
+    - name: INSTALL APACHE AND MODULE
+      package:
+        name: ["apache2", "libapache2-mod-php5.6"]
+        state: latest
+
+    - name: STOP APACHE
+      ansible.builtin.systemd:
+        name: apache2
+        state: stopped
+
+    - name: INSTALL NGINX
+      apt:
+        name: ["nginx", "nginx-common"]
+        state: latest
+
+    - name: STOP NGINX
+      ansible.builtin.systemd:
+        name: nginx
+        state: stopped
+
+    - name: INSTALL PHP5.6 & PHP-FPM
+      apt:
+        name: ["php5.6", "php5.6-fpm"]
+        state: latest
+
+    - name: REPLACE NGNIX SITE
+      copy:
+        src=default dest=/etc/nginx/sites-available/default
+
+    - name: CHANGE APACHE PORT
+      lineinfile:
+        dest: "/etc/apache2/ports.conf"
+        regexp: "^Listen"
+        line: "Listen 8888"
+        state: present
+
+    - name: CHANGE APACHE VIRTHOST LISTEN PORT
+      lineinfile:
+        dest: "/etc/apache2/sites-available/000-default.conf"
+        regexp: '^<VirtualHost \*:80>'
+        line: '<VirtualHost *:8888>'
+        state: present
+
+    - name: ENABLE APACHE2 AUTOSTART
+      ansible.builtin.systemd:
+        state: started
+        name: apache2
+
+    - name: ENABLE NGINX AUTOSTART
+      ansible.builtin.systemd:
+        state: started
+        name: nginx
+
+    - name: ENABLE APACHE MOD PHP5.6
+      apache2_module: 
+        name=php5.6 
+        state=present
+      notify:
+        - restart apache2
+
+    - name: REMOVE DEFAULT
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: CREATE SYMLINK
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/default
+        dest:  /etc/nginx/sites-enabled/default
+        state: link
+
+    - name: PHP-FPM CONFIG
+      ansible.builtin.copy:
+        src: www.conf
+        dest: /etc/php/5.6/fpm/pool.d/www.conf
+        mode: '0644'
+        backup: yes
+
+    - name: ADD INDEX.PHP
+      copy:
+        src=index.php dest=/var/www/html/index.php
+
+  handlers:
+    - name: restart apache2
+      ansible.builtin.service:
+        name: apache2
+        state: restarted
+
+    - name: restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+
+    - name: restart php-fpm
+      ansible.builtin.service:
+        name: php5.6-fpm
+        state: restarted
